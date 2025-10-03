@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Amor Espacial 3D</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: 'Georgia', serif;
+            touch-action: none;
+        }
+
+        #container {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .instructions {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff69b4;
+            font-size: 14px;
+            text-align: center;
+            text-shadow: 0 0 10px #ff69b4;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 15px;
+            border: 2px solid #ff69b4;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            pointer-events: all;
+        }
+
+        .control-btn {
+            background: linear-gradient(135deg, #ff69b4, #ff1493);
+            border: none;
+            color: white;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 105, 180, 0.8);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .control-btn:active {
+            transform: scale(0.9);
+            box-shadow: 0 0 30px rgba(255, 105, 180, 1);
+        }
+
+        .floating-heart {
+            position: fixed;
+            font-size: 30px;
+            pointer-events: none;
+            animation: floatUp 3s ease-out forwards;
+            z-index: 200;
+        }
+
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-200px) scale(1.5);
+                opacity: 0;
+            }
+        }
+
+        .info-card {
+            position: fixed;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 105, 180, 0.95);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(255, 105, 180, 0.8);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            max-width: 80%;
+        }
+
+        .info-card.show {
+            opacity: 1;
+        }
+
+        @media (max-width: 768px) {
+            .instructions {
+                font-size: 12px;
+                padding: 8px 12px;
+                max-width: 90%;
+            }
+            
+            .control-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 20px;
+            }
+
+            .info-card {
+                font-size: 16px;
+                padding: 12px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    
+    <div class="ui-overlay">
+        <div class="instructions" id="instructions">
+            📱 Arrastra para rotar • Pellizca para zoom
+        </div>
+        
+        <div class="info-card" id="infoCard"></div>
+
+        <div class="controls">
+            <button class="control-btn" id="heartBtn" title="Corazones">❤️</button>
+            <button class="control-btn" id="speedBtn" title="Velocidad">⚡</button>
+            <button class="control-btn" id="resetBtn" title="Reiniciar">🔄</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, planet, moon;
+        let floatingObjects = [];
+        let touch = { x: 0, y: 0, startX: 0, startY: 0, startDistance: 0 };
+        let targetRotation = { x: 0, y: 0 };
+        let currentRotation = { x: 0, y: 0 };
+        let rotationSpeed = 1;
+        let autoRotate = true;
+        let particles = [];
+
+        const phrases = [
+            'Te amo ❤️',
+            'Mi reina 👑',
+            'Para ti 💝',
+            'Me encantas 💕',
+            'Una diosa ✨',
+            'Amor de mi vida 💗',
+            'Mi amor 💖',
+            'Mi princesa 👸',
+            'Te amo tanto 💘',
+            'Eres preciosa 🌹',
+            'Mi vida 💓',
+            'Todo mi amor 💞'
+        ];
+
+        const hearts = ['❤️', '💕', '💖', '💗', '💘', '💝', '💞', '💓'];
+
+        function init() {
+            scene = new THREE.Scene();
+            
+            const isMobile = window.innerWidth < 768;
+            camera = new THREE.PerspectiveCamera(
+                isMobile ? 60 : 75, 
+                window.innerWidth / window.innerHeight, 
+                0.1, 
+                1000
+            );
+            camera.position.z = isMobile ? 18 : 15;
+
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true,
+                powerPreference: "high-performance"
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x000000, 1);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const pointLight1 = new THREE.PointLight(0xff69b4, 2, 50);
+            pointLight1.position.set(10, 10, 10);
+            scene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0xff1493, 1.5, 50);
+            pointLight2.position.set(-10, -10, 10);
+            scene.add(pointLight2);
+
+            createStars();
+            createPlanet();
+            createMoon();
+            createFloatingElements();
+            createParticles();
+            setupEventListeners();
+
+            animate();
+        }
+
+        function createStars() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const starsVertices = [];
+            for (let i = 0; i < 800; i++) {
+                const x = (Math.random() - 0.5) * 100;
+                const y = (Math.random() - 0.5) * 100;
+                const z = (Math.random() - 0.5) * 100;
+                starsVertices.push(x, y, z);
+            }
+
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+        }
+
+        function createPlanet() {
+            const geometry = new THREE.SphereGeometry(3, 64, 64);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+            gradient.addColorStop(0, '#ff69b4');
+            gradient.addColorStop(0.3, '#ff1493');
+            gradient.addColorStop(0.6, '#ff69b4');
+            gradient.addColorStop(1, '#ffc0cb');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 512, 512);
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            for (let i = 0; i < 50; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const radius = Math.random() * 30 + 10;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            
+            const material = new THREE.MeshPhongMaterial({
+                map: texture,
+                shininess: 100,
+                specular: 0xff69b4,
+                emissive: 0xff1493,
+                emissiveIntensity: 0.3
+            });
+
+            planet = new THREE.Mesh(geometry, material);
+            scene.add(planet);
+
+            const glowGeometry = new THREE.SphereGeometry(3.3, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff69b4,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            planet.add(glow);
+
+            // Add ring
+            const ringGeometry = new THREE.RingGeometry(4, 5, 64);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff69b4,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.rotation.x = Math.PI / 2.5;
+            planet.add(ring);
+        }
+
+        function createMoon() {
+            const geometry = new THREE.SphereGeometry(0.8, 32, 32);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.5, '#e0e0e0');
+            gradient.addColorStop(1, '#c0c0c0');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+            
+            ctx.fillStyle = 'rgba(150, 150, 150, 0.3)';
+            for (let i = 0; i < 20; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const radius = Math.random() * 15 + 5;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshPhongMaterial({
+                map: texture,
+                shininess: 50
+            });
+
+            moon = new THREE.Mesh(geometry, material);
+            moon.position.set(8, 3, 2);
+            scene.add(moon);
+        }
+
+        function createTextSprite(text) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 512;
+            canvas.height = 128;
+
+            ctx.fillStyle = 'rgba(255, 105, 180, 0.95)';
+            ctx.font = 'bold 44px Georgia';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = '#ff1493';
+            ctx.shadowBlur = 25;
+            ctx.fillText(text, 256, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(material);
+            
+            const isMobile = window.innerWidth < 768;
+            sprite.scale.set(isMobile ? 3 : 4, isMobile ? 0.75 : 1, 1);
+
+            return sprite;
+        }
+
+        function createImageCard() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            const gradient = ctx.createLinearGradient(0, 0, 256, 256);
+            gradient.addColorStop(0, '#ff69b4');
+            gradient.addColorStop(1, '#ff1493');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.font = 'bold 120px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('💕', 128, 128);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture, 
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+
+            return new THREE.Mesh(geometry, material);
+        }
+
+        function createFloatingElements() {
+            const isMobile = window.innerWidth < 768;
+            const orbitRadius = isMobile ? 8 : 7;
+            
+            phrases.forEach((phrase, index) => {
+                const angle = (index / phrases.length) * Math.PI * 2;
+                const element = Math.random() > 0.5 ? createTextSprite(phrase) : createImageCard();
+                
+                const x = Math.cos(angle) * orbitRadius;
+                const y = (Math.random() - 0.5) * 6;
+                const z = Math.sin(angle) * orbitRadius;
+                
+                element.position.set(x, y, z);
+                element.userData.phrase = phrase;
+                
+                floatingObjects.push({
+                    mesh: element,
+                    angle: angle,
+                    radius: orbitRadius,
+                    speed: 0.0005 + Math.random() * 0.001,
+                    verticalSpeed: 0.001 + Math.random() * 0.002,
+                    verticalOffset: Math.random() * Math.PI * 2
+                });
+                
+                scene.add(element);
+            });
+        }
+
+        function createParticles() {
+            const particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff69b4,
+                transparent: true,
+                opacity: 0.6
+            });
+
+            for (let i = 0; i < 30; i++) {
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 5 + Math.random() * 3;
+                
+                particle.position.set(
+                    Math.cos(angle) * radius,
+                    (Math.random() - 0.5) * 8,
+                    Math.sin(angle) * radius
+                );
+                
+                particles.push({
+                    mesh: particle,
+                    speed: 0.001 + Math.random() * 0.002,
+                    angle: angle,
+                    radius: radius
+                });
+                
+                scene.add(particle);
+            }
+        }
+
+        function setupEventListeners() {
+            // Touch events
+            let touchStartTime = 0;
+            
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                touchStartTime = Date.now();
+                autoRotate = false;
+                
+                if (e.touches.length === 1) {
+                    touch.startX = e.touches[0].clientX;
+                    touch.startY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    touch.startDistance = Math.sqrt(dx * dx + dy * dy);
+                }
+            });
+
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                
+                if (e.touches.length === 1) {
+                    const deltaX = (e.touches[0].clientX - touch.startX) / window.innerWidth;
+                    const deltaY = (e.touches[0].clientY - touch.startY) / window.innerHeight;
+                    
+                    targetRotation.y += deltaX * 2;
+                    targetRotation.x += deltaY * 2;
+                    
+                    touch.startX = e.touches[0].clientX;
+                    touch.startY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    const delta = distance - touch.startDistance;
+                    camera.position.z -= delta * 0.05;
+                    camera.position.z = Math.max(8, Math.min(25, camera.position.z));
+                    
+                    touch.startDistance = distance;
+                }
+            });
+
+            renderer.domElement.addEventListener('touchend', (e) => {
+                const touchDuration = Date.now() - touchStartTime;
+                
+                if (touchDuration < 200 && e.changedTouches.length === 1) {
+                    const touchX = e.changedTouches[0].clientX;
+                    const touchY = e.changedTouches[0].clientY;
+                    checkObjectTap(touchX, touchY);
+                }
+                
+                setTimeout(() => { autoRotate = true; }, 3000);
+            });
+
+            // Mouse events
+            let isDragging = false;
+            
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                autoRotate = false;
+                touch.startX = e.clientX;
+                touch.startY = e.clientY;
+            });
+
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = (e.clientX - touch.startX) / window.innerWidth;
+                    const deltaY = (e.clientY - touch.startY) / window.innerHeight;
+                    
+                    targetRotation.y += deltaX * 2;
+                    targetRotation.x += deltaY * 2;
+                    
+                    touch.startX = e.clientX;
+                    touch.startY = e.clientY;
+                }
+            });
+
+            renderer.domElement.addEventListener('mouseup', () => {
+                isDragging = false;
+                setTimeout(() => { autoRotate = true; }, 3000);
+            });
+
+            renderer.domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camera.position.z += e.deltaY * 0.01;
+                camera.position.z = Math.max(8, Math.min(25, camera.position.z));
+            });
+
+            // Button controls
+            document.getElementById('heartBtn').addEventListener('click', createHeartExplosion);
+            document.getElementById('speedBtn').addEventListener('click', toggleSpeed);
+            document.getElementById('resetBtn').addEventListener('click', resetCamera);
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function checkObjectTap(x, y) {
+            const mouse = new THREE.Vector2();
+            mouse.x = (x / window.innerWidth) * 2 - 1;
+            mouse.y = -(y / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(floatingObjects.map(o => o.mesh));
+            
+            if (intersects.length > 0) {
+                const obj = intersects[0].object;
+                if (obj.userData.phrase) {
+                    showInfoCard(obj.userData.phrase);
+                    createHeartBurst(x, y);
+                }
+            }
+        }
+
+        function showInfoCard(text) {
+            const card = document.getElementById('infoCard');
+            card.textContent = text;
+            card.classList.add('show');
+            
+            setTimeout(() => {
+                card.classList.remove('show');
+            }, 2000);
+        }
+
+        function createHeartBurst(x, y) {
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => {
+                    const heart = document.createElement('div');
+                    heart.className = 'floating-heart';
+                    heart.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+                    heart.style.left = (x + (Math.random() - 0.5) * 100) + 'px';
+                    heart.style.top = y + 'px';
+                    document.body.appendChild(heart);
+                    
+                    setTimeout(() => heart.remove(), 3000);
+                }, i * 100);
+            }
+        }
+
+        function createHeartExplosion() {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => {
+                    const angle = (i / 15) * Math.PI * 2;
+                    const distance = 100;
+                    const x = centerX + Math.cos(angle) * distance;
+                    const y = centerY + Math.sin(angle) * distance;
+                    
+                    const heart = document.createElement('div');
+                    heart.className = 'floating-heart';
+                    heart.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+                    heart.style.left = x + 'px';
+                    heart.style.top = y + 'px';
+                    document.body.appendChild(heart);
+                    
+                    setTimeout(() => heart.remove(), 3000);
+                }, i * 50);
+            }
+        }
+
+        function toggleSpeed() {
+            rotationSpeed = rotationSpeed === 1 ? 2 : 1;
+            const btn = document.getElementById('speedBtn');
+            btn.style.transform = 'scale(1.2)';
+            setTimeout(() => btn.style.transform = 'scale(1)', 200);
+        }
+
+        function resetCamera() {
+            camera.position.z = window.innerWidth < 768 ? 18 : 15;
+            targetRotation.x = 0;
+            targetRotation.y = 0;
+            autoRotate = true;
+            
+            const btn = document.getElementById('resetBtn');
+            btn.style.transform = 'rotate(360deg)';
+            setTimeout(() => btn.style.transform = 'rotate(0deg)', 500);
+        }
+
+        function onWindowResize() {
+            const isMobile = window.innerWidth < 768;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.fov = isMobile ? 60 : 75;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            currentRotation.x += (targetRotation.x - currentRotation.x) * 0.05;
+            currentRotation.y += (targetRotation.y - currentRotation.y) * 0.05;
+
+            if (autoRotate) {
+                targetRotation.y += 0.002 * rotationSpeed;
+            }
+
+            planet.rotation.y += 0.002 * rotationSpeed;
+            planet.rotation.x = currentRotation.x * 0.2;
+
+            const time = Date.now() * 0.0005 * rotationSpeed;
+            moon.position.x = Math.cos(time) * 8;
+            moon.position.z = Math.sin(time) * 8;
+            moon.rotation.y += 0.005 * rotationSpeed;
+
+            floatingObjects.forEach((obj) => {
+                obj.angle += obj.speed * rotationSpeed;
+                obj.verticalOffset += obj.verticalSpeed * rotationSpeed;
+                
+                obj.mesh.position.x = Math.cos(obj.angle + currentRotation.y) * obj.radius;
+                obj.mesh.position.z = Math.sin(obj.angle + currentRotation.y) * obj.radius;
+                obj.mesh.position.y = Math.sin(obj.verticalOffset) * 2;
+                
+                obj.mesh.lookAt(camera.position);
+            });
+
+            particles.forEach((p) => {
+                p.angle += p.speed * rotationSpeed;
+                p.mesh.position.x = Math.cos(p.angle) * p.radius;
+                p.mesh.position.z = Math.sin(p.angle) * p.radius;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
